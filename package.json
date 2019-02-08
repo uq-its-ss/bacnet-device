@@ -22,6 +22,7 @@
   },
   "homepage": "https://github.com/adam-nielsen/bacnet-device#readme",
   "dependencies": {
-    "bacstack": "0.0.1-beta.13"
+    "bacstack": "0.0.1-beta.13",
+    "debug": "^4.1.1"
   }
 }
