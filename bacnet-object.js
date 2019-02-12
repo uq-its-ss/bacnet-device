@@ -38,6 +38,7 @@ class BACnetObject
 	 * Add a new property if it doesn't already exist, and return it either way.
 	 */
 	addProperty(propertyId, typeId = undefined) {
+		propertyId = parseInt(propertyId);
 		if (this.dynamicProperties.includes(propertyId)) {
 			const propertyName = Util.getPropName(propertyId);
 			throw new Error(`Property ${propertyName} is generated on-the-fly and `
@@ -58,6 +59,7 @@ class BACnetObject
 	}
 
 	getProperty(propertyId) {
+		propertyId = parseInt(propertyId);
 		// Some properties are generated dynamically
 		switch (propertyId) {
 			case bacnet.enum.PropertyIdentifier.OBJECT_IDENTIFIER: {
