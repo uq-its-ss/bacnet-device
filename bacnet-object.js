@@ -94,12 +94,7 @@ class BACnetObject
 				// library create confirmant BACnet devices.
 				const selfTypeId = this.getProperty(bacnet.enum.PropertyIdentifier.OBJECT_TYPE).value;
 				if (MandatoryProperties[selfTypeId]) {
-					console.log('mandatoryProperties', MandatoryProperties[selfTypeId]);
-					console.log('allProps', prop._value);
 					const missingProperties = MandatoryProperties[selfTypeId].filter(p => !prop._value.includes(p));
-					//const missingProperties = prop._value.filter(p => MandatoryProperties[selfTypeId].includes(p));
-					console.log('missingProperties', missingProperties);
-
 					if (missingProperties.length > 0) {
 						const selfName = this.getProperty(bacnet.enum.PropertyIdentifier.OBJECT_NAME).value;
 						const missingPropertyNames = missingProperties.map(p => Util.getPropName(p));
