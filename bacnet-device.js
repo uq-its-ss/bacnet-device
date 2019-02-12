@@ -174,7 +174,7 @@ class BACnetDevice extends BACnetObject
 			}
 			debug.traffic(`[send] Replying to whoIs(${msg.lowLimit}..${msg.highLimit}`
 				+ `): iAm ${this.instance} -> ${msg.header.sender.address}/`
-				+ `${msg.header.sender.remoteNode}`);
+				+ `${msg.header.sender.forwardedFrom}`);
 			this.client.iAmResponse(
 				msg.header.sender,
 				this.instance,
