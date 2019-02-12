@@ -59,7 +59,24 @@ class BACnetObject
 		);
 	}
 
-	/// Delete an ele
+	/**
+	 * Add multiple properties and set their values at the same time.
+	 *
+	 * This is typically used to set static values like names and descriptions.
+	 *
+	 * @param object propList
+	 *   Associative array.  Array key is PropertyIdentifier enum, and the array
+	 *   value is used as the property value.
+	 */
+	addPropertyBulk(propList) {
+		Object.keys(propList).forEach(p => {
+			this.addProperty(p).value = propList[p];
+		});
+	}
+
+	/**
+	 * Remove a property, since properties can't have 'undefined' as a value.
+	 */
 	delProperty(propertyId, index = undefined) {
 		if (index !== undefined) delete this.properties[propertyId][index];
 		else delete this.properties[propertyId];
