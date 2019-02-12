@@ -14,6 +14,7 @@ const propertyTypeMap = {
 	[pi.DATABASE_REVISION]:               type.UNSIGNED_INTEGER,
 	[pi.DESCRIPTION]:                     type.CHARACTER_STRING,
 	[pi.DEVICE_ADDRESS_BINDING]:          type.CHARACTER_STRING,
+	[pi.DEVICE_TYPE]:                     type.CHARACTER_STRING,
 	[pi.FIRMWARE_REVISION]:               type.CHARACTER_STRING,
 	[pi.DEVICE_ADDRESS_BINDING]:          type.OCTET_STRING, // just a guess
 	[pi.MAX_APDU_LENGTH_ACCEPTED]:        type.UNSIGNED_INTEGER,
