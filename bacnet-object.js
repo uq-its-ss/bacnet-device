@@ -29,9 +29,16 @@ class BACnetObject
 			bacnet.enum.PropertyIdentifier.PROTOCOL_OBJECT_TYPES_SUPPORTED,
 		];
 
-		// The type is set aEvery instance of this class is a BACnet device.
+		// Set some defaults to ensure we comply with BACnet standards
 		this.addProperty(bacnet.enum.PropertyIdentifier.OBJECT_TYPE).value = typeId;
 		this.addProperty(bacnet.enum.PropertyIdentifier.OBJECT_NAME).value = name;
+		// We don't set PRESENT_VALUE in case the user wants to, and wants to set
+		// it to a different type to the one we might use (e.g. analogue values
+		// are REAL while digital values are BOOLEAN.)
+		this.addProperty(bacnet.enum.PropertyIdentifier.STATUS_FLAGS).value = [];
+		this.addProperty(bacnet.enum.PropertyIdentifier.EVENT_STATE).value = bacnet.enum.EventState.NORMAL;
+		this.addProperty(bacnet.enum.PropertyIdentifier.OUT_OF_SERVICE).value = false;
+		this.addProperty(bacnet.enum.PropertyIdentifier.UNITS).value = bacnet.enum.EngineeringUnits.NO_UNITS;
 	}
 
 	/**
