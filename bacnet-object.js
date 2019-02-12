@@ -67,8 +67,7 @@ class BACnetObject
 				const prop = new BACnetObjectProperty(propertyId, undefined, true);
 				prop._value = {
 					// Object type, e.g. BE.ObjectTypesSupported.DEVICE
-					// Is this typeId?
-					type: this.getProperty(bacnet.enum.PropertyIdentifier.OBJECT_TYPE).value,
+					typeId: this.getProperty(bacnet.enum.PropertyIdentifier.OBJECT_TYPE).value,
 					// Instance number.
 					instance: this.instance,
 				};
