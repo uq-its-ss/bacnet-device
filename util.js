@@ -21,7 +21,7 @@ class Util
 	 * console.log(getEnumName(bacnet.enum.PropertyIdentifier, 85));
 	 */
 	static getEnumName(group, value) {
-		return Object.keys(group).find(key => group[key] === value);
+		return Object.keys(group).find(key => group[key] === value) + '(' + value + ')';
 	}
 
 	/**

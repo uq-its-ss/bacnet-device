@@ -3,9 +3,13 @@
 // Objects attached to devices.
 //
 
+const assert = require('assert');
 const bacnet = require('bacstack');
+const debug = require('debug')('bacnet-device');
+debug.error = debug.extend('error*');
 
 const BACnetObjectProperty = require('./bacnet-object-property');
+const MandatoryProperties = require('./mandatory-properties');
 const Util = require('./util');
 
 class BACnetObject
@@ -14,6 +18,16 @@ class BACnetObject
 		this.instance = instance;
 		this.objects = {};
 		this.properties = {};
+
+		// This is a list of dynamic properties provided by getProperty().  It is
+		// an instance variable so that subclasses can append to it if they override
+		// getProperty().
+		this.dynamicProperties = [
+			bacnet.enum.PropertyIdentifier.OBJECT_IDENTIFIER,
+			bacnet.enum.PropertyIdentifier.PROPERTY_LIST,
+			bacnet.enum.PropertyIdentifier.OBJECT_LIST,
+			bacnet.enum.PropertyIdentifier.PROTOCOL_OBJECT_TYPES_SUPPORTED,
+		];
 
 		// The type is set aEvery instance of this class is a BACnet device.
 		this.addProperty(bacnet.enum.PropertyIdentifier.OBJECT_TYPE).value = typeId;
@@ -24,6 +38,11 @@ class BACnetObject
 	 * Add a new property if it doesn't already exist, and return it either way.
 	 */
 	addProperty(propertyId, typeId = undefined) {
+		if (this.dynamicProperties.includes(propertyId)) {
+			const propertyName = Util.getPropName(propertyId);
+			throw new Error(`Property ${propertyName} is generated on-the-fly and `
+				+ `cannot be set.`);
+		}
 		return (
 			this.properties[propertyId]
 			|| (
@@ -65,21 +84,44 @@ class BACnetObject
 					bacnet.enum.PropertyIdentifier.PROPERTY_LIST,
 				];
 				const prop = new BACnetObjectProperty(propertyId, undefined, true);
-				prop._value = Object
-					.keys(this.properties)
-					.map(p => parseInt(p))
+				const propertyList = this.getAllPropertyIds();
+				prop._value = propertyList
 					.filter(p => !ignoreProps.includes(p))
 				;
+
+				// Check to ensure all the mandatory properties are included, and warn
+				// the user if not.  This is not required but will help users of this
+				// library create confirmant BACnet devices.
+				const selfTypeId = this.getProperty(bacnet.enum.PropertyIdentifier.OBJECT_TYPE).value;
+				if (MandatoryProperties[selfTypeId]) {
+					console.log('mandatoryProperties', MandatoryProperties[selfTypeId]);
+					console.log('allProps', prop._value);
+					const missingProperties = MandatoryProperties[selfTypeId].filter(p => !prop._value.includes(p));
+					//const missingProperties = prop._value.filter(p => MandatoryProperties[selfTypeId].includes(p));
+					console.log('missingProperties', missingProperties);
+
+					if (missingProperties.length > 0) {
+						const selfName = this.getProperty(bacnet.enum.PropertyIdentifier.OBJECT_NAME).value;
+						const missingPropertyNames = missingProperties.map(p => Util.getPropName(p));
+						debug.error(`Object #${this.instance}("${selfName}") is missing these mandatory properties: %o`, missingPropertyNames);
+					}
+				} else {
+					const typeName = Util.getEnumName(bacnet.enum.ObjectType, selfTypeId);
+					debug.error(`TODO: No mandatory properties have been defined for the object type ${typeName}`);
+				}
 				return prop;
 			}
 
 			case bacnet.enum.PropertyIdentifier.OBJECT_LIST: {
 				let objectList = [];
-				Object.keys(this.objects).forEach(objectInstance => {
-					const obj = this.objects[objectInstance];
-					objectList.push({
-						type: obj.getProperty(bacnet.enum.PropertyIdentifier.OBJECT_TYPE),
-						instance: obj.instance,
+				Object.keys(this.objects).forEach(objType => {
+					const objectsOfType = this.objects[objType];
+					Object.keys(objectsOfType).forEach(objectInstance => {
+						const obj = objectsOfType[objectInstance];
+						objectList.push({
+							typeId: obj.getProperty(bacnet.enum.PropertyIdentifier.OBJECT_TYPE).value,
+							instance: obj.instance,
+						});
 					});
 				});
 				const prop = new BACnetObjectProperty(propertyId, undefined, true);
@@ -90,10 +132,13 @@ class BACnetObject
 			case bacnet.enum.PropertyIdentifier.PROTOCOL_OBJECT_TYPES_SUPPORTED: {
 				// Run through all our objects and return just the types in use.
 				let typeList = {};
-				Object.keys(this.objects).forEach(objectInstance => {
-					const obj = this.objects[objectInstance];
-					const type = obj.getProperty(bacnet.enum.PropertyIdentifier.OBJECT_TYPE).value;
-					typeList[type] = true;
+				Object.keys(this.objects).forEach(objType => {
+					const objectsOfType = this.objects[objType];
+					Object.keys(objectsOfType).forEach(objectInstance => {
+						const obj = objectsOfType[objectInstance];
+						const type = obj.getProperty(bacnet.enum.PropertyIdentifier.OBJECT_TYPE).value;
+						typeList[type] = true;
+					});
 				});
 				const prop = new BACnetObjectProperty(propertyId, undefined, true);
 				prop._value = Object.keys(typeList).map(t => parseInt(t));
@@ -105,6 +150,20 @@ class BACnetObject
 		}
 		return this.properties[propertyId];
 	}
+
+	getAllPropertyIds() {
+		const propertyList = [
+			...Object.keys(this.properties),
+			// Also add the dynamic properties generated by this function, since
+			// they won't be in this.properties.
+			...this.dynamicProperties,
+		];
+		// Convert the string keys back into integer values that will match enums.
+		return propertyList
+			.map(p => parseInt(p))
+		;
+	}
+
 
 	/**
 	 * Return an object with the properties as string keys, suitable for passing
@@ -145,7 +204,35 @@ class BACnetObject
 	 *   User-friendly name for the object, such as "Room temperature".
 	 */
 	addObject(instance, objectTypeId, name) {
-		return this.objects[instance] = new BACnetObject(instance, objectTypeId, name);
+		assert(Number.isInteger(instance), 'Instance ID must be an integer.');
+		assert(Number.isInteger(objectTypeId), 'Object type must be a bacnet.enum.ObjectType value.');
+
+		if (!this.objects[objectTypeId]) this.objects[objectTypeId] = {};
+		return this.objects[objectTypeId][instance] = new BACnetObject(instance, objectTypeId, name);
+	}
+
+	/**
+	 * Get the sub-object identified by the given instance ID, optionally matching
+	 * the given type as well.
+	 *
+	 * @param Number instance
+	 *   ID number for the object.
+	 *
+	 * @param bacnet.enum.ObjectType objectTypeId
+	 *   Object type, such as an analogue input or digital output.  This must be
+	 *   specified because it is possible to have multiple objects with the same
+	 *   instance ID, differing only by type (such as Analogue Input #1 and
+	 *   Digital Output #1).
+	 *
+	 * @return If `instance` and `objectTypeId` are valid, the `BACnetObject` is
+	 *   returned.  If `instance` or `objectTypeId` are invalid, `undefined` is
+	 *   returned.
+	 */
+	getObject(instance, objectTypeId) {
+		const typeGroup = this.objects[objectTypeId];
+		if (!typeGroup) return undefined;
+
+		return typeGroup[instance];
 	}
 };
 

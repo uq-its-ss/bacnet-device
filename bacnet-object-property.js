@@ -46,13 +46,13 @@ class BACnetObjectProperty
 		let lookup = typeEnumMap[this.propertyId];
 		let value = this._value;
 		if (lookup) {
-			value = Util.getEnumName(lookup, value) + `(${value})`;
+			value = Util.getEnumName(lookup, value);
 		}
 		return value;
 	}
 
 	toString() {
-		return `BACnetObjectProperty { ${Util.getPropName(this.propertyId)}(${this.propertyId}) = ${this.valueAsString()} }`;
+		return `BACnetObjectProperty { ${Util.getPropName(this.propertyId)} = ${this.valueAsString()} }`;
 	}
 
 	[nodeUtil.inspect.custom]() {
