@@ -188,20 +188,20 @@ class BACnetDevice extends BACnetObject
 	onWhoIs(msg) {
 		if (
 			(
-				(msg.lowLimit === undefined)
-				|| (msg.highLimit === undefined)
+				(msg.payload.lowLimit === undefined)
+				|| (msg.payload.highLimit === undefined)
 			) || (
-				(msg.lowLimit <= this.instance)
-				&& (msg.highLimit >= this.instance)
+				(msg.payload.lowLimit <= this.instance)
+				&& (msg.payload.highLimit >= this.instance)
 			)
 		) {
 			if (msg.header.sender.forwardedFrom) {
 				// Message came from a BBMD, so need to reply as if we're a BBMD.
 				msg.header.sender.forwardedFrom = this.ip;
 			}
-			debug.traffic(`[send] Replying to whoIs(${msg.lowLimit}..${msg.highLimit}`
-				+ `): iAm ${this.instance} -> ${msg.header.sender.address}/`
-				+ `${msg.header.sender.forwardedFrom}`);
+			debug.traffic(`[send] Replying to whoIs(${msg.payload.lowLimit}..`
+				+ `${msg.payload.highLimit}): iAm ${this.instance} -> `
+				+ `${msg.header.sender.address}/${msg.header.sender.forwardedFrom}`);
 			this.client.iAmResponse(
 				msg.header.sender,
 				this.instance,
