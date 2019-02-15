@@ -197,7 +197,11 @@ class BACnetDevice extends BACnetObject
 		) {
 			if (msg.header.sender.forwardedFrom) {
 				// Message came from a BBMD, so need to reply as if we're a BBMD.
-				msg.header.sender.forwardedFrom = this.ip;
+				//msg.header.sender.forwardedFrom = this.ip;
+
+				// Actually it seems like responses should be returned direct to the
+				// caller by the device, bypassing the BBMD.
+				msg.header.sender.forwardedFrom = null;
 			}
 			debug.traffic(`[send] Replying to whoIs(${msg.payload.lowLimit}..`
 				+ `${msg.payload.highLimit}): iAm ${this.instance} -> `
