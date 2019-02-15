@@ -131,6 +131,7 @@ class BACnetDevice extends BACnetObject
 		this.subscriptions = [];
 
 		// Set up BACnet callbacks
+		this.client.on('unhandledEvent', this.onUnhandledEvent.bind(this));
 		this.client.on('registerForeignDevice', this.onRegisterForeignDevice.bind(this));
 		this.client.on('whoIs', this.onWhoIs.bind(this));
 		this.client.on('readProperty', this.onReadProperty.bind(this));
@@ -147,6 +148,32 @@ class BACnetDevice extends BACnetObject
 			}
 			default:
 				return super.getProperty(propertyId);
+		}
+	}
+
+	/**
+	 * The default code will respond to unhandled messages with an error, however
+	 * the error will be broadcasted to the local subnet.  Since we are
+	 * functioning as a hybrid device+BBMD, we need to examine the message and if
+	 * it has been sent to us as if we're a BBMD, then we need to respond in BBMD
+	 * mode instead, otherwise the error response won't make it to the caller and
+	 * they will think we have gone offline.
+	 */
+	onUnhandledEvent(msg) {
+		if (msg.header.expectingReply) {
+			if (msg.header.sender.forwardedFrom) {
+				// Message came from a BBMD, so need to reply as if we're a BBMD.
+				msg.header.sender.forwardedFrom = this.ip;
+			}
+			const enumType = msg.header.confirmedService ? BE.ConfirmedServiceChoice : BE.UnconfirmedServiceChoice;
+			debug.traffic.extend('temp')('Replying with error for unhandled service:', BE.getEnumName(enumType, msg.service));
+			this.client.errorResponse(
+				msg.header.sender,
+				msg.service,
+				msg.invokeId,
+				BE.ErrorClass.SERVICES,
+				BE.ErrorCode.REJECT_UNRECOGNIZED_SERVICE
+			);
 		}
 	}
 
