@@ -14,7 +14,8 @@ const Util = require('./util');
 
 class BACnetObject
 {
-	constructor(instance, typeId, name) {
+	constructor(dev, instance, typeId, name) {
+		this.dev = dev;
 		this.instance = instance;
 		this.objects = {};
 		this.properties = {};
@@ -54,7 +55,7 @@ class BACnetObject
 		return (
 			this.properties[propertyId]
 			|| (
-				this.properties[propertyId] = new BACnetObjectProperty(propertyId, typeId)
+				this.properties[propertyId] = new BACnetObjectProperty(this, propertyId, typeId)
 			)
 		);
 	}
@@ -88,7 +89,7 @@ class BACnetObject
 		switch (propertyId) {
 			case bacnet.enum.PropertyIdentifier.OBJECT_IDENTIFIER: {
 				// Construct this one from the other properties.
-				const prop = new BACnetObjectProperty(propertyId, undefined, true);
+				const prop = new BACnetObjectProperty(this, propertyId, undefined, true);
 				prop._value = {
 					// Object type, e.g. BE.ObjectTypesSupported.DEVICE
 					typeId: this.getProperty(bacnet.enum.PropertyIdentifier.OBJECT_TYPE).value,
@@ -108,7 +109,7 @@ class BACnetObject
 					bacnet.enum.PropertyIdentifier.OBJECT_IDENTIFIER,
 					bacnet.enum.PropertyIdentifier.PROPERTY_LIST,
 				];
-				const prop = new BACnetObjectProperty(propertyId, undefined, true);
+				const prop = new BACnetObjectProperty(this, propertyId, undefined, true);
 				const propertyList = this.getAllPropertyIds();
 				prop._value = propertyList
 					.filter(p => !ignoreProps.includes(p))
@@ -144,7 +145,7 @@ class BACnetObject
 						});
 					});
 				});
-				const prop = new BACnetObjectProperty(propertyId, undefined, true);
+				const prop = new BACnetObjectProperty(this, propertyId, undefined, true);
 				prop._value = objectList;
 				return prop;
 			}
@@ -160,7 +161,7 @@ class BACnetObject
 						typeList[type] = true;
 					});
 				});
-				const prop = new BACnetObjectProperty(propertyId, undefined, true);
+				const prop = new BACnetObjectProperty(this, propertyId, undefined, true);
 				prop._value = Object.keys(typeList).map(t => parseInt(t));
 				return prop;
 			}
@@ -182,6 +183,15 @@ class BACnetObject
 		return propertyList
 			.map(p => parseInt(p))
 		;
+	}
+
+	/**
+	 * Called when a child property's value has changed, so that we can notify
+	 * any object-level subscribers.
+	 */
+	onPropertyChanged(property) {
+		if (!this.dev) return; // happens during init on Device object
+		this.dev.onObjectPropertyChanged(this, property);
 	}
 
 
@@ -228,7 +238,7 @@ class BACnetObject
 		assert(Number.isInteger(objectTypeId), 'Object type must be a bacnet.enum.ObjectType value.');
 
 		if (!this.objects[objectTypeId]) this.objects[objectTypeId] = {};
-		return this.objects[objectTypeId][instance] = new BACnetObject(instance, objectTypeId, name);
+		return this.objects[objectTypeId][instance] = new BACnetObject(this, instance, objectTypeId, name);
 	}
 
 	/**

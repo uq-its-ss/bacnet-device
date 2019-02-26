@@ -17,7 +17,8 @@ const typeEnumMap = {
 
 class BACnetObjectProperty
 {
-	constructor(propertyId, typeId = undefined, readOnly = false) {
+	constructor(obj, propertyId, typeId = undefined, readOnly = false) {
+		this.obj = obj;
 		this.propertyId = propertyId;
 		this.typeId = typeId || propertyTypeMap[propertyId];
 		this.readOnly = readOnly;
@@ -27,6 +28,8 @@ class BACnetObjectProperty
 				+ `type set, you must specify one yourself or update the bacnet-device `
 				+ `Node module.`);
 		}
+
+		this.callbacks = [];
 	}
 
 	get value() {
@@ -38,8 +41,25 @@ class BACnetObjectProperty
 			throw new Error(`Property ${Util.getPropName(this.propertyId)} cannot be changed.`);
 		}
 		this._value = newValue;
-		// TODO: Notify any subscribeCOV listeners
-		console.log('value updated, notify listeners');
+
+		// Notify any subscribeCov listeners.
+		this.obj.onPropertyChanged(this);
+
+		// Notify and subscribeProperty listeners.
+		this.callbacks.forEach(cb => {
+			cb.fn(this);
+		});
+	}
+
+	addCallback(id, fn) {
+		this.callbacks.push({
+			id: id,
+			fn: fn,
+		});
+	}
+
+	removeCallback(id) {
+		this.callbacks = this.callbacks.filter(cb => cb.id !== id);
 	}
 
 	valueAsString() {

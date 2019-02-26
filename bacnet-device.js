@@ -33,7 +33,9 @@ class BACnetDevice extends BACnetObject
 	 *     locating us by using the BBMD to forward us broadcasts.
 	 */
 	constructor(deviceInfo, hostInfo = {}) {
-		super(deviceInfo.deviceId, bacnet.enum.ObjectType.DEVICE, deviceInfo.name);
+		super(null, deviceInfo.deviceId, bacnet.enum.ObjectType.DEVICE, deviceInfo.name);
+		this.dev = this;
+
 		assert(deviceInfo.deviceId, 'Cannot create a new device without a deviceId');
 		assert(deviceInfo.name, 'Cannot create a new device without a name');
 
@@ -50,11 +52,11 @@ class BACnetDevice extends BACnetObject
 			// These are the BACnet calls we support.
 
 			// bacnet.enum.ServicesSupported.ACKNOWLEDGE_ALARM,
-//			bacnet.enum.ServicesSupported.CONFIRMED_COV_NOTIFICATION,
+			bacnet.enum.ServicesSupported.CONFIRMED_COV_NOTIFICATION,
 			// bacnet.enum.ServicesSupported.CONFIRMED_EVENT_NOTIFICATION,
 			// bacnet.enum.ServicesSupported.GET_ALARM_SUMMARY,
 			// bacnet.enum.ServicesSupported.GET_ENROLLMENT_SUMMARY,
-//			bacnet.enum.ServicesSupported.SUBSCRIBE_COV
+			bacnet.enum.ServicesSupported.SUBSCRIBE_COV,
 			// bacnet.enum.ServicesSupported.ATOMIC_READ_FILE,
 			// bacnet.enum.ServicesSupported.ATOMIC_WRITE_FILE,
 			// bacnet.enum.ServicesSupported.ADD_LIST_ELEMENT,
@@ -136,13 +138,14 @@ class BACnetDevice extends BACnetObject
 		this.client.on('whoIs', this.onWhoIs.bind(this));
 		this.client.on('readProperty', this.onReadProperty.bind(this));
 		this.client.on('readPropertyMultiple', this.onReadPropertyMultiple.bind(this));
+		this.client.on('subscribeCov', this.onSubscribeCov.bind(this));
 	}
 
 	getProperty(propertyId) {
 		switch (propertyId) {
 			case bacnet.enum.PropertyIdentifier.APDU_TIMEOUT: {
 				// Get the timeout value from node-bacstack
-				const prop = new BACnetObjectProperty(propertyId, undefined, true);
+				const prop = new BACnetObjectProperty(this, propertyId, undefined, true);
 				prop._value = this.client._settings.apduTimeout;
 				return prop;
 			}
@@ -166,7 +169,7 @@ class BACnetDevice extends BACnetObject
 				msg.header.sender.forwardedFrom = this.ip;
 			}
 			const enumType = msg.header.confirmedService ? BE.ConfirmedServiceChoice : BE.UnconfirmedServiceChoice;
-			debug.traffic.extend('temp')('Replying with error for unhandled service:', BE.getEnumName(enumType, msg.service));
+			debug.traffic('Replying with error for unhandled service:', BE.getEnumName(enumType, msg.service));
 			this.client.errorResponse(
 				msg.header.sender,
 				msg.service,
@@ -400,6 +403,84 @@ class BACnetDevice extends BACnetObject
 			msg.invokeId,
 			responseList
 		);
+	}
+
+	onSubscribeCov(msg) {
+		const typeName = Util.getEnumName(BE.ObjectType, msg.payload.monitoredObjectId.type);
+		const objectIdName = typeName + ':' + msg.payload.monitoredObjectId.instance;
+		debug.traffic(`[recv/${msg.header.sender.address}] subscribeCov: object ${objectIdName}`);
+
+		const object = this.getObject(msg.payload.monitoredObjectId.instance, msg.payload.monitoredObjectId.type);
+
+		if (!object.subscriptions) object.subscriptions = [];
+
+		// Remove any existing subscription for this property and device, as well as
+		// any expired ones.
+		object.subscriptions = object.subscriptions.filter(sub => (
+			(sub.subscriberAddress != msg.header.sender)
+			&& (sub.subscriberProcessId != msg.payload.subscriberProcessId)
+			&& (sub.lifetime > 0)
+		));
+
+		// Add the new subscription if a non-zero lifetime is given (as a zero or
+		// missing lifetime means 'unsubscribe').
+		if (msg.payload.lifetime) {
+			object.subscriptions.push({
+				subscriberAddress: msg.header.sender,
+				monitoredObjectId: msg.payload.monitoredObjectId,
+				subscriberProcessId: msg.payload.subscriberProcessId,
+				invokeId: msg.invokeId,
+				lifetime: msg.payload.lifetime,
+			});
+		}
+
+		debug.traffic(`[send/${msg.header.sender.address}] simpleAckResponse for subscribeCov`);
+		this.client.simpleAckResponse(
+			msg.header.sender,
+			msg.service,
+			msg.invokeId,
+		);
+	}
+
+	/**
+	 * Top-level callback function when any property is changed.  We need to look
+	 * up any subscriptions and send messages out as needed.
+	 */
+	onObjectPropertyChanged(object, property) {
+		let propList = [];
+
+		propList.push({
+			property: {
+				id: property.propertyId,
+			},
+			value: this.encodePropValue(property),
+		});
+
+		if (object.subscriptions) {
+			object.subscriptions.forEach(sub => {
+				const typeName = Util.getEnumName(BE.ObjectType, sub.monitoredObjectId.type);
+				const objectIdName = typeName + ':' + sub.monitoredObjectId.instance;
+				debug.traffic(`[send/${sub.subscriberAddress.address}] confirmedCOVNotification: object ${objectIdName}`);
+				this.client.confirmedCOVNotification(
+					sub.subscriberAddress,
+					sub.monitoredObjectId,
+					sub.subscriberProcessId,
+					this.instance,
+					sub.lifetime,
+					propList,
+					{
+						invokeId: sub.invokeId,
+					},
+					err => {
+						if (err) {
+							debug.traffic(`[recv/${sub.subscriberAddress.address}] confirmedCOVNotification was rejected:`, err);
+						} else {
+							debug.traffic(`[recv/${sub.subscriberAddress.address}] confirmedCOVNotification was ACKed`);
+						}
+					}
+				);
+			});
+		}
 	}
 
 	/**
