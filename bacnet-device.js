@@ -89,7 +89,7 @@ class BACnetDevice extends BACnetObject
 			// bacnet.enum.ServicesSupported.READ_RANGE,
 			// bacnet.enum.ServicesSupported.UTC_TIME_SYNCHRONIZATION,
 			// bacnet.enum.ServicesSupported.LIFE_SAFETY_OPERATION,
-			// bacnet.enum.ServicesSupported.SUBSCRIBE_COV_PROPERTY,
+			bacnet.enum.ServicesSupported.SUBSCRIBE_COV_PROPERTY,
 			// bacnet.enum.ServicesSupported.GET_EVENT_INFORMATION,
 			// bacnet.enum.ServicesSupported.WRITE_GROUP,
 			// bacnet.enum.ServicesSupported.SUBSCRIBE_COV_PROPERTY_MULTIPLE,
@@ -139,6 +139,7 @@ class BACnetDevice extends BACnetObject
 		this.client.on('readProperty', this.onReadProperty.bind(this));
 		this.client.on('readPropertyMultiple', this.onReadPropertyMultiple.bind(this));
 		this.client.on('subscribeCov', this.onSubscribeCov.bind(this));
+		this.client.on('subscribeProperty', this.onSubscribeProperty.bind(this));
 	}
 
 	getProperty(propertyId) {
@@ -411,8 +412,19 @@ class BACnetDevice extends BACnetObject
 		debug.traffic(`[recv/${msg.header.sender.address}] subscribeCov: object ${objectIdName}`);
 
 		const object = this.getObject(msg.payload.monitoredObjectId.instance, msg.payload.monitoredObjectId.type);
-
-		if (!object.subscriptions) object.subscriptions = [];
+		if (!object) {
+			// Invalid object
+			debug(`${msg.header.sender.address} tried to subscribe to non-existent object ${objectIdName}`);
+			debug.traffic(`[send/${msg.header.sender.address}] Returning error OBJECT:UNKNOWN_OBJECT`);
+			this.client.errorResponse(
+				msg.header.sender,
+				msg.service,
+				msg.invokeId,
+				BE.ErrorClass.OBJECT,
+				BE.ErrorCode.UNKNOWN_OBJECT
+			);
+			return;
+		}
 
 		// Remove any existing subscription for this property and device, as well as
 		// any expired ones.
@@ -425,16 +437,132 @@ class BACnetDevice extends BACnetObject
 		// Add the new subscription if a non-zero lifetime is given (as a zero or
 		// missing lifetime means 'unsubscribe').
 		if (msg.payload.lifetime) {
-			object.subscriptions.push({
+			const sub = {
 				subscriberAddress: msg.header.sender,
 				monitoredObjectId: msg.payload.monitoredObjectId,
 				subscriberProcessId: msg.payload.subscriberProcessId,
+				issueConfirmedNotifications: true,
 				invokeId: msg.invokeId,
 				lifetime: msg.payload.lifetime,
+			}
+			object.subscriptions.push(sub);
+			debug(`Adding subscription to object ${objectIdName} for ${msg.header.sender.address}#${msg.payload.subscriberProcessId}`);
+
+			// We have to send an update immediately after the subscription, even if
+			// the value hasn't changed.
+			let propList = [];
+			// Get all property values.
+			object.getAllPropertyIds().forEach(propertyId => {
+				const property = object.getProperty(propertyId);
+				propList.push({
+					property: {
+						id: propertyId,
+					},
+					value: this.encodePropValue(property),
+				});
 			});
+			this.sendPropertyCov(sub, propList);
+		} else {
+			debug(`Removing subscription to object ${objectIdName} by ${msg.header.sender.address}#${msg.payload.subscriberProcessId}`);
 		}
 
 		debug.traffic(`[send/${msg.header.sender.address}] simpleAckResponse for subscribeCov`);
+		this.client.simpleAckResponse(
+			msg.header.sender,
+			msg.service,
+			msg.invokeId,
+		);
+	}
+
+	onSubscribeProperty(msg) {
+		const typeName = Util.getEnumName(BE.ObjectType, msg.payload.monitoredObjectId.type);
+		const objectIdName = typeName + ':' + msg.payload.monitoredObjectId.instance;
+		debug.traffic(`[recv/${msg.header.sender.address}] subscribeCovProperty: object ${objectIdName}`);
+
+		if (!msg.payload.issueConfirmedNotifications) {
+			// Unconfirmed notifications aren't yet implemented in bacstack
+			debug(`Returning error to ${msg.header.sender.address} - unable to subscribe with unconfirmed notifications`);
+			debug.traffic(`[send/${msg.header.sender.address}] Returning error OBJECT:OPTIONAL_FUNCTIONALITY_NOT_SUPPORTED`);
+			this.client.errorResponse(
+				msg.header.sender,
+				msg.service,
+				msg.invokeId,
+				BE.ErrorClass.OBJECT,
+				BE.ErrorCode.OPTIONAL_FUNCTIONALITY_NOT_SUPPORTED
+			);
+			return;
+		}
+
+		const object = this.getObject(msg.payload.monitoredObjectId.instance, msg.payload.monitoredObjectId.type);
+		if (!object) {
+			// Invalid object
+			debug(`${msg.header.sender.address} tried to subscribe to non-existent object ${objectIdName}`);
+			debug.traffic(`[send/${msg.header.sender.address}] Returning error OBJECT:UNKNOWN_OBJECT`);
+			this.client.errorResponse(
+				msg.header.sender,
+				msg.service,
+				msg.invokeId,
+				BE.ErrorClass.OBJECT,
+				BE.ErrorCode.UNKNOWN_OBJECT
+			);
+			return;
+		}
+
+		const property = object.getProperty(msg.payload.monitoredProperty.id);
+		const propertyName = Util.getPropName(msg.payload.monitoredProperty.id);
+		if (!property) {
+			// Invalid property
+			debug(`${msg.header.sender.address} tried to subscribe to non-existent property ${objectIdName}/${propertyName}`);
+			debug.traffic(`[send/${msg.header.sender.address}] Returning error PROPERTY:UNKNOWN_PROPERTY`);
+			this.client.errorResponse(
+				msg.header.sender,
+				msg.service,
+				msg.invokeId,
+				BE.ErrorClass.PROPERTY,
+				BE.ErrorCode.UNKNOWN_PROPERTY
+			);
+			return;
+		}
+
+		// Remove any existing subscription for this property and device, as well as
+		// any expired ones.
+		property.subscriptions = property.subscriptions.filter(sub => (
+			(sub.subscriberAddress != msg.header.sender)
+			&& (sub.subscriberProcessId != msg.payload.subscriberProcessId)
+			&& (sub.lifetime > 0)
+		));
+
+		// Add the new subscription if a non-zero lifetime is given (as a zero or
+		// missing lifetime means 'unsubscribe').
+		if (msg.payload.lifetime) {
+			const sub = {
+				subscriberAddress: msg.header.sender,
+				monitoredObjectId: msg.payload.monitoredObjectId,
+				subscriberProcessId: msg.payload.subscriberProcessId,
+				issueConfirmedNotifications: msg.payload.issueConfirmedNotifications,
+				monitoredIndex: msg.payload.monitoredProperty.index,
+				invokeId: msg.invokeId,
+				lifetime: msg.payload.lifetime,
+			};
+			property.subscriptions.push(sub);
+			debug(`Adding subscription to property ${objectIdName}/${propertyName} for ${msg.header.sender.address}#${msg.payload.subscriberProcessId}`);
+
+			// We have to send an update immediately after the subscription, even if
+			// the value hasn't changed.
+			let propList = [];
+			propList.push({
+				property: {
+					id: property.propertyId,
+				},
+				value: this.encodePropValue(property),
+			});
+			this.sendPropertyCov(sub, propList);
+
+		} else {
+			debug(`Removing subscription to ${objectIdName}/${propertyName} by ${msg.header.sender.address}#${msg.payload.subscriberProcessId}`);
+		}
+
+		debug.traffic(`[send/${msg.header.sender.address}] simpleAckResponse for subscribeCovProperty`);
 		this.client.simpleAckResponse(
 			msg.header.sender,
 			msg.service,
@@ -457,29 +585,57 @@ class BACnetDevice extends BACnetObject
 		});
 
 		if (object.subscriptions) {
+			// TODO: add batch/transaction start/stop functions to collect all changes
+			// up into small number of messages, instead of one per property.
 			object.subscriptions.forEach(sub => {
 				const typeName = Util.getEnumName(BE.ObjectType, sub.monitoredObjectId.type);
 				const objectIdName = typeName + ':' + sub.monitoredObjectId.instance;
-				debug.traffic(`[send/${sub.subscriberAddress.address}] confirmedCOVNotification: object ${objectIdName}`);
-				this.client.confirmedCOVNotification(
-					sub.subscriberAddress,
-					sub.monitoredObjectId,
-					sub.subscriberProcessId,
-					this.instance,
-					sub.lifetime,
-					propList,
-					{
-						invokeId: sub.invokeId,
-					},
-					err => {
-						if (err) {
-							debug.traffic(`[recv/${sub.subscriberAddress.address}] confirmedCOVNotification was rejected:`, err);
-						} else {
-							debug.traffic(`[recv/${sub.subscriberAddress.address}] confirmedCOVNotification was ACKed`);
-						}
-					}
-				);
+				this.sendPropertyCov(sub, propList);
 			});
+		}
+
+		if (property.subscriptions) {
+			property.subscriptions.forEach(sub => {
+				const typeName = Util.getEnumName(BE.ObjectType, sub.monitoredObjectId.type);
+				const objectIdName = typeName + ':' + sub.monitoredObjectId.instance;
+				const propertyName = Util.getPropName(property.propertyId);
+				debug.traffic(`[send/${sub.subscriberAddress.address}] confirmedCOVNotification: property ${objectIdName}/${propertyName}`);
+				this.sendPropertyCov(sub, propList);
+			});
+		}
+	}
+
+	/**
+	 * Send a COV notification.
+	 *
+	 * This is a separate function as we need to send the same message both when
+	 * the value changes, as well as when a subscription request comes through.
+	 */
+	sendPropertyCov(sub, propList) {
+		const typeName = Util.getEnumName(BE.ObjectType, sub.monitoredObjectId.type);
+		const objectIdName = typeName + ':' + sub.monitoredObjectId.instance;
+		debug.traffic(`[send/${sub.subscriberAddress.address}] confirmedCOVNotification: object ${objectIdName}, ${propList.length} items`);
+		if (sub.issueConfirmedNotifications) {
+			this.client.confirmedCOVNotification(
+				sub.subscriberAddress,
+				sub.monitoredObjectId,
+				sub.subscriberProcessId,
+				this.instance,
+				sub.lifetime,
+				propList,
+				{
+					invokeId: sub.invokeId,
+				},
+				err => {
+					if (err) {
+						debug.traffic(`[recv/${sub.subscriberAddress.address}] confirmedCOVNotification was rejected:`, err);
+					} else {
+						debug.traffic(`[recv/${sub.subscriberAddress.address}] confirmedCOVNotification was ACKed`);
+					}
+				}
+			);
+		} else {
+			// Sending unsubscribedCOV notifications is not yet implemented in bacstack
 		}
 	}
 

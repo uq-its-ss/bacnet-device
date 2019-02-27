@@ -22,6 +22,7 @@ class BACnetObjectProperty
 		this.propertyId = propertyId;
 		this.typeId = typeId || propertyTypeMap[propertyId];
 		this.readOnly = readOnly;
+		this.subscriptions = [];
 
 		if (this.typeId === undefined) {
 			throw new Error(`Property ${Util.getPropName(propertyId)} has no default `

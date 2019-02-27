@@ -19,6 +19,7 @@ class BACnetObject
 		this.instance = instance;
 		this.objects = {};
 		this.properties = {};
+		this.subscriptions = [];
 
 		// This is a list of dynamic properties provided by getProperty().  It is
 		// an instance variable so that subclasses can append to it if they override
