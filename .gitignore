@@ -1,1 +1,5 @@
+# Dependecies
 node_modules/
+
+# Editors
+.idea/
