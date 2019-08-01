@@ -22,7 +22,7 @@
   },
   "homepage": "https://github.com/uq-its-ss/bacnet-device#readme",
   "dependencies": {
-    "bacstack": "adam-nielsen/node-bacstack",
+    "bacstack": "uq-its-ss/node-bacstack",
     "debug": "^4.1.1"
   },
   "devDependencies": {}
