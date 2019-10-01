@@ -293,7 +293,7 @@ class BACnetDevice extends BACnetObject
 			const typeName = Util.getEnumName(BE.ObjectType, propGroup.objectId.type);
 			const objectIdName = typeName + ':' + propGroup.objectId.instance;
 			const propListFriendly = propGroup.properties.map(prop => Util.getEnumName(BE.PropertyIdentifier, prop.id));
-			debug.traffic(`[recv/${msg.header.sender.address}] readPropertyMultiple: object ${objectIdName}/%O`, propListFriendly);
+			debug.traffic(`[recv/${msg.header.sender.address}] readPropertyMultiple: object ${objectIdName}/%o`, propListFriendly);
 
 			// BACnet spec 15.7.2
 			// If a device ID of 4194303 is given for a DEVICE(8) read, it should be

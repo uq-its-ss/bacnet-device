@@ -1,6 +1,6 @@
 {
   "name": "@uq-its-ss/bacnet-device",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Interface for implementing a BACnet device",
   "main": "index.js",
   "scripts": {
