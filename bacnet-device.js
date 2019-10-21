@@ -31,6 +31,7 @@ class BACnetDevice extends BACnetObject
 	 *   - ip: If functioning as a BBMD, this is our own IP address.  Must be
 	 *     reachable by the BMS, which will contact us directly on the IP after
 	 *     locating us by using the BBMD to forward us broadcasts.
+	 *   - interface: Optional IP address to bind to.
 	 */
 	constructor(deviceInfo, hostInfo = {}) {
 		super(null, deviceInfo.deviceId, bacnet.enum.ObjectType.DEVICE, deviceInfo.name);
@@ -124,6 +125,7 @@ class BACnetDevice extends BACnetObject
 		this.client = new bacnet({
 			adpuTimeout: 6000,
 			port: hostInfo.port,
+			interface: hostInfo.interface,
 		});
 
 		// Start with an empty Broadcast Distribution Table.
